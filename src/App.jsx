@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
+import { Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom'
+
 import Blog from './components/Blog'
-import Notification from './components/Notification'
+import BlogForm from './components/BlogForm'
+import Notification from './components/Notification' 
+
 import blogService from './services/blogs'
 import loginService from './services/login'
 
@@ -10,141 +14,169 @@ const App = () => {
   const [user, setUser] = useState(() => {
     const loggedUserJSON = window.localStorage.getItem('loggedBlogappUser')
     if (loggedUserJSON) {
-      const user = JSON.parse(loggedUserJSON)
-      blogService.setToken(user.token)
-      return user
+      const parsedUser = JSON.parse(loggedUserJSON)
+      blogService.setToken(parsedUser.token)
+      return parsedUser
     }
     return null
   })
-  
+
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [title, setTitle] = useState('')
-  const [author, setAuthor] = useState('')
-  const [url, setUrl] = useState('')
   const [message, setMessage] = useState({ text: null, type: '' })
 
-  useEffect(() => {
-    blogService.getAll().then(blogs => setBlogs(blogs))
-  }, [])
+  const navigate = useNavigate()
 
-  const showMessage = (text, type = 'success') => {
-    setMessage({ text, type })
-    setTimeout(() => setMessage({ text: null, type: '' }), 5000)
-  }
+  useEffect(() => {
+    blogService.getAll().then(initialBlogs =>
+      setBlogs(initialBlogs.data) 
+    ).catch(error => {
+      console.error("Error fetching blogs:", error)
+    })
+  }, [])
 
   const handleLogin = async (event) => {
     event.preventDefault()
     try {
-      const user = await loginService.login({ username, password })
-      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(user))
+      const user = await loginService.login({
+        username, password,
+      })
+
+      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(user)) 
       blogService.setToken(user.token)
+      
       setUser(user)
       setUsername('')
       setPassword('')
-      showMessage(`Welcome ${user.name}`)
-    } catch (error) {
-      console.error('Login error:', error)
-      showMessage('Wrong credentials', 'error')
+      showMessage('Successfully logged in!', 'success')
+      navigate('/')
+    } catch (error) { 
+      console.error(error)
+      showMessage('Wrong username or password', 'error')
     }
   }
 
   const handleLogout = () => {
     window.localStorage.removeItem('loggedBlogappUser')
     setUser(null)
-    blogService.setToken(null)
+    navigate('/')
   }
 
-  const handleAddBlog = async (event) => {
-    event.preventDefault()
+  const addBlog = async (blogObject) => {
     try {
-      const newBlog = await blogService.create({ title, author, url })
-      setBlogs(blogs.concat(newBlog)) 
-      setTitle('')
-      setAuthor('')
-      setUrl('')
-      showMessage(`A new blog ${newBlog.title} by ${newBlog.author} added`)
+      const returnedBlog = await blogService.create(blogObject)
+      // تأكد إن blogs عبارة عن array قبل ما تستخدم concat
+      const currentBlogs = Array.isArray(blogs) ? blogs : []
+      setBlogs(currentBlogs.concat(returnedBlog))
+      showMessage(`A new blog ${returnedBlog.title} by ${returnedBlog.author} added`, 'success')
+      navigate('/') 
     } catch (error) {
-      console.error('Add blog error:', error)
-      showMessage('Failed to add blog', 'error')
+      console.error(error)
+      showMessage('Error adding blog', 'error')
     }
   }
 
-  const handleLike = async (id) => {
+  const addLike = async (id, updatedBlogObject) => {
     try {
-      await blogService.updateLike(id)
-      setBlogs(blogs.map(b => b.id === id ? { ...b, likes: b.likes + 1 } : b))
+      const returnedBlog = await blogService.update(id, updatedBlogObject)
+      const currentBlogs = Array.isArray(blogs) ? blogs : []
+      setBlogs(currentBlogs.map(blog => blog.id !== id ? blog : returnedBlog))
     } catch (error) {
-      console.error('Like error:', error)
+      console.error(error)
+      showMessage('Error updating likes', 'error')
     }
   }
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this blog?')) {
+  const deleteBlog = async (id, blogTitle) => {
+    if (window.confirm(`Remove blog ${blogTitle}?`)) {
       try {
         await blogService.remove(id)
-        setBlogs(blogs.filter(b => b.id !== id))
-        showMessage('Blog deleted successfully')
+        const currentBlogs = Array.isArray(blogs) ? blogs : []
+        setBlogs(currentBlogs.filter(blog => blog.id !== id))
+        showMessage('Blog removed successfully', 'success')
       } catch (error) {
-        console.error('Delete error:', error)
-        showMessage('Failed to delete blog', 'error')
+        console.error(error)
+        showMessage('Error removing blog', 'error')
       }
     }
   }
 
-  if (user === null) {
-    return (
-      <div style={{ padding: 20 }}>
-        <h2>Log in to application</h2>
-        <Notification message={message.text} type={message.type} />
-        
-        <form onSubmit={handleLogin}>
-          <div>
-            Username: 
-            <input type="text" value={username} onChange={({ target }) => setUsername(target.value)} />
-          </div>
-          <div>
-            Password: 
-            <input type="password" value={password} onChange={({ target }) => setPassword(target.value)} />
-          </div>
-          <button type="submit" style={{ marginTop: 10 }}>Login</button>
-        </form>
-      </div>
-    )
+  const showMessage = (text, type) => {
+    setMessage({ text, type })
+    setTimeout(() => {
+      setMessage({ text: null, type: '' })
+    }, 5000)
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>Blogs Dashboard</h2>
+    <div>
+      <div style={{ backgroundColor: 'lightgray', padding: '10px', marginBottom: '20px' }}>
+        <Link to="/" style={{ padding: 5, textDecoration: 'none', color: 'blue' }}>blogs</Link>
+        
+        {user ? (
+          <>
+            <Link to="/create" style={{ padding: 5, textDecoration: 'none', color: 'blue' }}>create new</Link>
+            <span style={{ paddingLeft: 10 }}>{user.name} logged in</span>
+            <button onClick={handleLogout} style={{ marginLeft: 10 }}>logout</button>
+          </>
+        ) : (
+          <Link to="/login" style={{ padding: 5, textDecoration: 'none', color: 'blue' }}>login</Link>
+        )}
+      </div>
+
+      <h2>blog app</h2>
       <Notification message={message.text} type={message.type} />
-      
-      <p>
-        👤 <b>{user.name}</b> logged in 
-        <button onClick={handleLogout} style={{ marginLeft: 10 }}>Logout</button>
-      </p>
 
-      <hr />
+      <Routes>
+        <Route path="/" element={
+          <div>
+            {Array.isArray(blogs) ? (
+              [...blogs].sort((a, b) => b.likes - a.likes).map(blog =>
+                <Blog 
+                  key={blog.id} 
+                  blog={blog} 
+                  addLike={addLike} 
+                  deleteBlog={deleteBlog} 
+                  user={user} 
+                />
+              )
+            ) : (
+              <p>Error loading blogs. Please check the backend server.</p>
+            )}
+          </div>
+        } />
+        
+        <Route path="/create" element={
+          user ? <BlogForm createBlog={addBlog} /> : <Navigate to="/login" />
+        } />
 
-      <h3>Create New Blog</h3>
-      <form onSubmit={handleAddBlog} style={{ marginBottom: 20 }}>
-        <div>Title: <input value={title} onChange={e => setTitle(e.target.value)} /></div>
-        <div>Author: <input value={author} onChange={e => setAuthor(e.target.value)} /></div>
-        <div>URL: <input value={url} onChange={e => setUrl(e.target.value)} /></div>
-        <button type="submit" style={{ marginTop: 10, background: 'green', color: 'white' }}>Create</button>
-      </form>
-
-      <hr />
-
-      <h3>All Blogs</h3>
-      {blogs.map(blog =>
-        <Blog 
-          key={blog.id} 
-          blog={blog} 
-          handleLike={handleLike} 
-          handleDelete={handleDelete}
-          currentUser={user}
-        />
-      )}
+        <Route path="/login" element={
+          user ? <Navigate to="/" /> : (
+            <div>
+              <h2>Log in to application</h2>
+              <form onSubmit={handleLogin}>
+                <div>
+                  username
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={({ target }) => setUsername(target.value)}
+                  />
+                </div>
+                <div>
+                  password
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={({ target }) => setPassword(target.value)}
+                  />
+                </div>
+                <button type="submit">login</button>
+              </form>
+            </div>
+          )
+        } />
+      </Routes>
     </div>
   )
 }
